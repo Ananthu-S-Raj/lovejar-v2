@@ -1,0 +1,40 @@
+name = "lovejar-backend"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lovejar-db"
+database_id = "80d08c88-1c27-4fa2-9edc-d695080c0864"
+
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom"]
+
+# Set these with `wrangler secret put <NAME>` — never commit real values.
+# USER_PIN_HASH       - PBKDF2 hash of the 6-digit user PIN (see scripts/hash-pin.md in README)
+# ADMIN_PASSWORD_HASH - PBKDF2 hash of the admin password
+# ADMIN_EMAIL         - admin login email
+# GEMINI_API_KEY      - Google Gemini API key
+# WEATHER_API_KEY     - OpenWeatherMap (or similar) API key
+# VAPID_PUBLIC_KEY    - base64url raw P-256 public point (65 bytes) for Web Push signing
+# VAPID_PRIVATE_KEY   - base64url raw P-256 private scalar (32 bytes)
+# VAPID_SUBJECT       - VAPID token contact, e.g. mailto:admin@yourdomain.com
+#
+# Generate a local pair with `node scripts/gen-vapid.mjs` (appends to .dev.vars).
+# For production: `wrangler secret put VAPID_PUBLIC_KEY`, etc. — then run the
+# "Test notification" button once from Admin → Settings → Notifications.
+
+[vars]
+# Non-secret config, safe to keep in this file
+USER_NAME = "Abhi"
+APP_TIMEZONE_OFFSET_MINUTES = "330" # IST = UTC+5:30
+# Comma-separated origins allowed to call this API with credentials.
+# Local dev defaults; add your deployed frontend origin (e.g. https://your-app.pages.dev)
+# before going live, or override via `wrangler secret put ALLOWED_ORIGINS`.
+ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174"

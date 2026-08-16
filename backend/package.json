@@ -1,0 +1,26 @@
+{
+  "name": "lovejar-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 execute lovejar-db --local --file=./src/db/schema.sql",
+    "db:migrate:remote": "wrangler d1 execute lovejar-db --remote --file=./src/db/schema.sql",
+    "db:migrate:upgrade": "wrangler d1 execute lovejar-db --file=./src/db/migrations/002_add_chat_kind.sql",
+    "db:migrate:notifications": "wrangler d1 execute lovejar-db --file=./src/db/migrations/003_notifications_push.sql",
+    "db:migrate:admin": "wrangler d1 execute lovejar-db --file=./src/db/migrations/004_admin_control.sql",
+    "db:migrate:features": "wrangler d1 execute lovejar-db --file=./src/db/migrations/005_letter_priority_chat_read.sql",
+    "db:migrate:login": "wrangler d1 execute lovejar-db --local --file=./src/db/migrations/006_letter_read_login_history.sql"
+  },
+  "dependencies": {
+    "hono": "^4.6.9"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^3.85.0"
+  }
+}

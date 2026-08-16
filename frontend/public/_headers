@@ -1,0 +1,11 @@
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(self), payment=(), usb=()
+
+# Content-Security-Policy is intentionally deferred until the production API
+# domain is decided. When set, add the API origin (and its wss: scheme) to
+# connect-src, then verify the app against the policy before enabling:
+#   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://<API_DOMAIN> wss://<API_DOMAIN>; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
