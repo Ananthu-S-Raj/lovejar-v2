@@ -14,7 +14,7 @@ class_name = "ChatRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ChatRoom"]
+new_sqlite_classes = ["ChatRoom"]
 
 # Set these with `wrangler secret put <NAME>` — never commit real values.
 # USER_PIN_HASH       - PBKDF2 hash of the 6-digit user PIN (see scripts/hash-pin.md in README)
