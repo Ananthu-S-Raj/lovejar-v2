@@ -34,7 +34,16 @@ new_sqlite_classes = ["ChatRoom"]
 # Non-secret config, safe to keep in this file
 USER_NAME = "Abhi"
 APP_TIMEZONE_OFFSET_MINUTES = "330" # IST = UTC+5:30
-# Comma-separated origins allowed to call this API with credentials.
-# Local dev defaults; add your deployed frontend origin (e.g. https://your-app.pages.dev)
-# before going live, or override via `wrangler secret put ALLOWED_ORIGINS`.
+
+# Security mode. "development" (default) keeps SameSite=Strict session cookies
+# and the dev CORS allowlist below — correct for the localhost-only dev setup.
+# Production MUST override this to "production" (`wrangler secret put ENVIRONMENT`),
+# which switches session cookies to SameSite=None (cross-site Pages -> Worker
+# auth) and restricts CORS/CSRF origin checks to exactly https://lovejar-v2.pages.dev,
+# ignoring ALLOWED_ORIGINS below so localhost can never be a production origin.
+ENVIRONMENT = "development"
+
+# Dev-only comma-separated origins allowed to call this API with credentials.
+# Applies ONLY when ENVIRONMENT is not "production". In production the origin
+# allowlist is the single deployed frontend URL (see lib/security.ts).
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174"

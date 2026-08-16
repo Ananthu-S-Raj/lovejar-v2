@@ -8,7 +8,8 @@ export type Bindings = {
   WEATHER_API_KEY: string;
   USER_NAME: string;
   APP_TIMEZONE_OFFSET_MINUTES: string;
-  ALLOWED_ORIGINS: string; // comma-separated frontend origins allowed by CORS
+  ALLOWED_ORIGINS: string; // dev comma-separated frontend origins allowed by CORS (ignored in production)
+  ENVIRONMENT: string; // "production" for the deployed cross-site setup; anything else = local dev (see lib/security.ts)
   // Web Push (admin-only background notifications). Set via `wrangler secret put`.
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string;

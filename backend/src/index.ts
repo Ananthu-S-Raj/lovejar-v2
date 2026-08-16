@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import type { AppEnv } from "./types";
 
 import authRoutes from "./routes/auth";
@@ -19,28 +18,13 @@ import healthRoutes from "./routes/health";
 
 import { greeting, isBirthdayToday } from "./lib/time";
 import { requireAuth } from "./lib/middleware";
+import { corsAndOriginGuard } from "./lib/security";
 
 const app = new Hono<AppEnv>();
 
-app.use(
-  "*",
-  cors({
-    // Explicit allowlist only. ALLOWED_ORIGINS is a comma-separated list of
-    // frontend origins (see wrangler.toml [vars]). Never reflects arbitrary origins.
-    origin: (origin, c) => {
-      if (!origin) return null; // same-origin / non-browser requests need no CORS headers
-      const allowed = (c.env.ALLOWED_ORIGINS ?? "")
-        .split(",")
-        .map((s: string) => s.trim())
-        .filter(Boolean);
-      return allowed.includes(origin) ? origin : null;
-    },
-    credentials: true,
-  })
-);
-
 // Security headers on every response (defense in depth; the browser-enforced
-// document policies live in the frontend hosting config).
+// document policies live in the frontend hosting config). Registered FIRST so
+// they also cover the 403/204 short-circuits of the CORS/CSRF guard below.
 app.use("*", async (c, next) => {
   await next();
   c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -49,6 +33,14 @@ app.use("*", async (c, next) => {
   c.header("Referrer-Policy", "no-referrer");
   c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), payment=(), usb=()");
 });
+
+// CORS + CSRF/origin policy. Replaces the previous hono/cors allowlist with a
+// single guard that (1) reflects CORS headers (including credentials) only for
+// explicitly allowed origins, (2) answers preflights only for allowed origins,
+// and (3) rejects any state-changing request (POST/PUT/PATCH/DELETE) that does
+// not carry an allowed Origin. See lib/security.ts for the exact policy and
+// how production (https://lovejar-v2.pages.dev) is separated from local dev.
+app.use("*", corsAndOriginGuard);
 
 app.get("/", (c) => c.json({ name: "LoveJar API", status: "ok" }));
 

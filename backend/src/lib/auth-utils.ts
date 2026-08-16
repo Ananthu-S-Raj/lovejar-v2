@@ -87,13 +87,32 @@ export function parseCookie(header: string | null, name: string): string | null 
 export const USER_COOKIE = "lj_session";
 export const ADMIN_COOKIE = "lj_admin";
 
-export function sessionCookie(token: string, expiresAt: number, name = USER_COOKIE): string {
-  const expires = new Date(expiresAt * 1000).toUTCString();
-  return `${name}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=${expires}`;
+// Cookie attribute policy. In production the frontend (Pages) and backend
+// (Workers) are on different sites, so session cookies MUST be SameSite=None
+// (and therefore Secure) or the browser will not attach them on cross-site
+// requests. Local development is same-site on http://localhost, where the
+// pre-existing SameSite=Strict behavior is kept so dev sessions work exactly
+// as before. The mode comes from the ENVIRONMENT binding — see lib/security.ts.
+export type CookiePolicy = { secure: boolean; sameSite: "Strict" | "None" };
+
+export function cookiePolicy(env: { ENVIRONMENT?: string }): CookiePolicy {
+  return env.ENVIRONMENT === "production"
+    ? { secure: true, sameSite: "None" }
+    : { secure: true, sameSite: "Strict" };
 }
 
-export function clearSessionCookie(name = USER_COOKIE): string {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+export function sessionCookie(token: string, expiresAt: number, name: string, policy: CookiePolicy): string {
+  const expires = new Date(expiresAt * 1000).toUTCString();
+  const secure = policy.secure ? " Secure;" : "";
+  return `${name}=${token}; Path=/; HttpOnly;${secure} SameSite=${policy.sameSite}; Expires=${expires}`;
+}
+
+// Clear cookies must carry the SAME attributes as the ones they invalidate
+// (Path, Secure, SameSite), otherwise the browser will not match them and a
+// stale session cookie can survive logout.
+export function clearSessionCookie(name: string, policy: CookiePolicy): string {
+  const secure = policy.secure ? " Secure;" : "";
+  return `${name}=; Path=/; HttpOnly;${secure} SameSite=${policy.sameSite}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
 // ---------------------------------------------------------------------------

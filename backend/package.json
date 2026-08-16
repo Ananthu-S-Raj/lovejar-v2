@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test": "esbuild tests/security.test.ts --bundle --platform=node --format=esm --outfile=dist-tests/security.test.mjs && node --test dist-tests/security.test.mjs",
     "db:migrate:local": "wrangler d1 execute lovejar-db --local --file=./src/db/schema.sql",
     "db:migrate:remote": "wrangler d1 execute lovejar-db --remote --file=./src/db/schema.sql",
     "db:migrate:upgrade": "wrangler d1 execute lovejar-db --file=./src/db/migrations/002_add_chat_kind.sql",

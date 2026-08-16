@@ -3,8 +3,14 @@ import type { AppEnv } from "../types";
 import { requireAuth } from "../lib/middleware";
 import { logAdminAction } from "../lib/admin-log";
 import { LIMITS } from "../lib/limits";
+import { wsOriginGuard } from "../lib/security";
 
 const chat = new Hono<AppEnv>();
+// Origin-gate the WebSocket upgrade BEFORE session auth (registration order),
+// so a cross-site page can never even probe session validity and disallowed
+// origins are rejected without a D1 lookup. Scoped to /ws only: every other
+// /chat/* route and all internal Worker -> ChatRoom DO calls are unaffected.
+chat.use("/ws", wsOriginGuard);
 chat.use("*", requireAuth());
 
 function chatStub(env: AppEnv["Bindings"]) {

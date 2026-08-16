@@ -43,9 +43,13 @@ things are inherently things *you* configure, not code:
 - A Gemini API key (jar still works without one, using fallback messages).
 - A weather API key (OpenWeatherMap or similar).
 - Real device testing for vibration/sound feel, since that's subjective polish.
-- Tightening the CORS allowlist in `wrangler.toml` (`ALLOWED_ORIGINS`) to your actual deployed
-  frontend URL before going live. Local dev origins (`http://localhost:5173`, `http://127.0.0.1:5173`)
-  are preconfigured; add your Pages URL and remove them as needed.
+- Tightening the CORS/CSRF allowlist for production. The Worker runs in two modes
+  controlled by the `ENVIRONMENT` binding (see `lib/security.ts`): in **production**
+  only `https://lovejar-v2.pages.dev` is accepted and session cookies use
+  `SameSite=None` (cross-site Pages → Worker auth); in development the localhost
+  origins in `wrangler.toml` (`ALLOWED_ORIGINS`) are used with `SameSite=Strict`.
+  Before going live set `ENVIRONMENT=production` on the deployed Worker — see the
+  "Deploying the backend" section.
 
 ## Project layout
 
@@ -99,11 +103,16 @@ scripts/hash-secret.mjs   Generates the PIN/password hash you paste into wrangle
    npx wrangler secret put GEMINI_API_KEY
    npx wrangler secret put WEATHER_API_KEY
    ```
-7. Configure the allowed origins for CORS (replace with your real Pages URL once deployed):
+7. Configure the security mode. The Worker runs in **development** mode by default
+   (same-site `SameSite=Strict` cookies + the localhost-only dev CORS allowlist).
+   For production — where the Pages frontend and the Worker backend are different
+   sites — enable production mode so session cookies become `SameSite=None` and
+   CORS/CSRF origin checks accept exactly your deployed frontend origin:
    ```
-   npx wrangler secret put ALLOWED_ORIGINS    # comma-separated list, e.g. https://lovejar.pages.dev
+   npx wrangler secret put ENVIRONMENT    # enter: production
    ```
-   (Alternatively, edit `ALLOWED_ORIGINS` in the `[vars]` section of `wrangler.toml`.)
+   Production mode ignores `ALLOWED_ORIGINS` in `wrangler.toml`; the accepted
+   origin is fixed to `https://lovejar-v2.pages.dev` in `backend/src/lib/security.ts`.
 8. Deploy:
    ```
    npm run deploy
@@ -118,8 +127,8 @@ Cloudflare Pages is the natural free-tier pairing here:
 2. Copy `.env.example` to `.env` and set `VITE_API_BASE` to your deployed Worker URL.
 3. `npm run build` (outputs to `frontend/dist`)
 4. Deploy `dist/` via Cloudflare Pages (drag-and-drop in the dashboard, or `npx wrangler pages deploy dist`).
-5. Go back to `backend/wrangler.toml` and set `ALLOWED_ORIGINS` to your Pages URL, then redeploy
-   the backend.
+5. Ensure the backend has `ENVIRONMENT=production` set (step 7 of "Deploying the backend"),
+   then redeploy the backend so the new security configuration takes effect.
 
 ## Local development
 

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dev-dist/
+dist-tests/
 .wrangler/
 .env
 .env.local

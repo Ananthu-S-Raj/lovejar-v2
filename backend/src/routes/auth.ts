@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../types";
-import { createSession, sessionCookie, clearSessionCookie, verifySecret, hashSecret, parseCookie, getSession, getSetting, activeCredentialHash, ADMIN_COOKIE, USER_COOKIE } from "../lib/auth-utils";
+import { createSession, sessionCookie, clearSessionCookie, cookiePolicy, verifySecret, hashSecret, parseCookie, getSession, getSetting, activeCredentialHash, ADMIN_COOKIE, USER_COOKIE } from "../lib/auth-utils";
 import { notify } from "../lib/notifications";
 import { logAdminAction } from "../lib/admin-log";
 import { LIMITS } from "../lib/limits";
@@ -139,7 +139,7 @@ auth.post("/user/login", async (c) => {
   }
 
   const { token, expiresAt } = await createSession(c.env.DB, "user");
-  c.header("Set-Cookie", sessionCookie(token, expiresAt));
+  c.header("Set-Cookie", sessionCookie(token, expiresAt, USER_COOKIE, cookiePolicy(c.env)));
   return c.json({ ok: true, greetingName: c.env.USER_NAME });
 });
 
@@ -170,7 +170,7 @@ auth.post("/admin/login", async (c) => {
   if (!ok) return c.json({ error: "Invalid email or password" }, 401);
 
   const { token, expiresAt } = await createSession(c.env.DB, "admin");
-  c.header("Set-Cookie", sessionCookie(token, expiresAt, ADMIN_COOKIE));
+  c.header("Set-Cookie", sessionCookie(token, expiresAt, ADMIN_COOKIE, cookiePolicy(c.env)));
   await logAdminAction(c.env.DB, "admin_login", "Admin signed in");
   return c.json({ ok: true });
 });
@@ -188,20 +188,20 @@ auth.post("/logout", async (c) => {
   if (adminSession) {
     await logAdminAction(c.env.DB, "admin_logout", "Admin signed out");
     await c.env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(adminToken).run();
-    c.header("Set-Cookie", clearSessionCookie(ADMIN_COOKIE));
+    c.header("Set-Cookie", clearSessionCookie(ADMIN_COOKIE, cookiePolicy(c.env)));
     cleared++;
   }
   if (userSession) {
     await c.env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(userToken).run();
-    c.header("Set-Cookie", clearSessionCookie(USER_COOKIE), { append: true });
+    c.header("Set-Cookie", clearSessionCookie(USER_COOKIE, cookiePolicy(c.env)), { append: true });
     cleared++;
   }
   // Best-effort: clear whichever cookies exist even if no session row matched.
   if (!adminSession) {
-    c.header("Set-Cookie", clearSessionCookie(ADMIN_COOKIE), { append: cleared++ > 0 });
+    c.header("Set-Cookie", clearSessionCookie(ADMIN_COOKIE, cookiePolicy(c.env)), { append: cleared++ > 0 });
   }
   if (!userSession) {
-    c.header("Set-Cookie", clearSessionCookie(USER_COOKIE), { append: true });
+    c.header("Set-Cookie", clearSessionCookie(USER_COOKIE, cookiePolicy(c.env)), { append: true });
   }
   return c.json({ ok: true });
 });
