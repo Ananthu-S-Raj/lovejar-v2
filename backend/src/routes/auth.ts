@@ -146,28 +146,71 @@ auth.post("/user/login", async (c) => {
 // POST /auth/admin/login { email, password }
 auth.post("/admin/login", async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>();
-  if (!email || !password) return c.json({ error: "Email and password required" }, 400);
 
-  const now = Math.floor(Date.now() / 1000);
-  if ((await recentFailures(c.env.DB, "admin", now)) >= MAX_FAILURES) {
-    // Same response as bad credentials so lockout state is not revealed.
-    return c.json({ error: "Invalid email or password" }, 401);
+  if (!email || !password) {
+    return c.json({ error: "Email and password are required.", code: "missing_credentials" }, 400);
   }
 
-  const emailOk = email.trim().toLowerCase() === c.env.ADMIN_EMAIL.trim().toLowerCase();
-  // Always run the PBKDF2 verification so the response time does not reveal
-  // whether the email address is valid. The active admin password hash is the
-  // D1 override if the admin set one live, else the ADMIN_PASSWORD_HASH Worker
-  // secret (bootstrap/recovery). The override is the SINGLE effective
-  // credential — the Worker secret is ignored while it exists.
-  const activeAdminHash = await activeCredentialHash(c.env.DB, "admin_password_hash", c.env.ADMIN_PASSWORD_HASH);
-  const passOk = await verifySecret(password, activeAdminHash);
-  const ok = emailOk && passOk;
-  await c.env.DB.prepare("INSERT INTO login_attempts (role, success, reason, created_at) VALUES ('admin', ?, ?, ?)")
-    .bind(ok ? 1 : 0, ok ? null : "failed_pin", now)
-    .run();
+  // Defensive: fail-closed if the ADMIN_EMAIL secret is misconfigured.
+  const adminEmail = c.env.ADMIN_EMAIL;
+  if (!adminEmail) {
+    return c.json({ error: "Service unavailable" }, 503);
+  }
 
-  if (!ok) return c.json({ error: "Invalid email or password" }, 401);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return c.json({ error: "Please enter a valid email address.", code: "invalid_email" }, 400);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // C) Rate limit already reached: record the blocked attempt for audit, fire
+  //    a security alert (deduped within the window), return the same generic
+  //    response as bad credentials so lockout state is not revealed.
+  if ((await recentFailures(c.env.DB, "admin", now)) >= MAX_FAILURES) {
+    const result = await c.env.DB.prepare(
+      "INSERT INTO login_attempts (role, success, reason, created_at) VALUES ('admin', 0, 'locked', ?)"
+    ).bind(now).run();
+    await securityAlert(
+      c.env,
+      "Login temporarily blocked",
+      "Admin account is temporarily blocked — repeated unsuccessful attempts triggered the login protection.",
+      Number(result.meta.last_row_id)
+    );
+    return c.json({ error: "Too many login attempts. Please try again later.", code: "rate_limited" }, 429);
+  }
+
+  // D) Credential verification (timing-safe: always run PBKDF2 regardless of
+  //    whether the email address matches).
+  const emailOk = email.trim().toLowerCase() === adminEmail.trim().toLowerCase();
+  const activeAdminHash = await activeCredentialHash(c.env.DB, "admin_password_hash", c.env.ADMIN_PASSWORD_HASH);
+  const passOk = activeAdminHash ? await verifySecret(password, activeAdminHash) : false;
+  const ok = emailOk && passOk;
+
+  const result = await c.env.DB.prepare("INSERT INTO login_attempts (role, success, reason, created_at) VALUES ('admin', ?, ?, ?)")
+    .bind(ok ? 1 : 0, ok ? null : "failed_password", now)
+    .run();
+  const attemptId = Number(result.meta.last_row_id);
+
+  if (!ok) {
+    const failCount = await recentFailures(c.env.DB, "admin", now);
+    if (failCount === 3) {
+      await securityAlert(
+        c.env,
+        "Multiple failed login attempts",
+        "Admin account received multiple unsuccessful login attempts.",
+        attemptId
+      );
+    } else if (failCount >= MAX_FAILURES) {
+      await securityAlert(
+        c.env,
+        "Login temporarily blocked",
+        "Admin account is temporarily blocked — repeated unsuccessful attempts triggered the login protection.",
+        attemptId
+      );
+      return c.json({ error: "Too many login attempts. Please try again later.", code: "rate_limited" }, 429);
+    }
+    return c.json({ error: "Invalid email or password.", code: "invalid_credentials" }, 401);
+  }
 
   const { token, expiresAt } = await createSession(c.env.DB, "admin");
   c.header("Set-Cookie", sessionCookie(token, expiresAt, ADMIN_COOKIE, cookiePolicy(c.env)));

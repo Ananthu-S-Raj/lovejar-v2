@@ -41,7 +41,6 @@ APP_TIMEZONE_OFFSET_MINUTES = "330" # IST = UTC+5:30
 # which switches session cookies to SameSite=None (cross-site Pages -> Worker
 # auth) and restricts CORS/CSRF origin checks to exactly https://lovejar-v2.pages.dev,
 # ignoring ALLOWED_ORIGINS below so localhost can never be a production origin.
-ENVIRONMENT = "development"
 
 # Dev-only comma-separated origins allowed to call this API with credentials.
 # Applies ONLY when ENVIRONMENT is not "production". In production the origin

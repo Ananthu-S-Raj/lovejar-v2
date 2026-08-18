@@ -56,15 +56,39 @@ class FakeD1 {
   doRun(sql: string, args: unknown[]): { success: boolean; meta: { last_row_id: number; changes: number } } {
     const s = normalize(sql);
     if (s.includes("insert into login_attempts")) {
-      const [role, success, reason, createdAt] = args;
-      this.loginAttempts.push({
-        id: this.nextAttemptId++,
-        role: role as string,
-        success: success as number,
-        reason: (reason as string) ?? null,
-        created_at: createdAt as number,
-      });
-      return { success: true, meta: { last_row_id: this.nextAttemptId - 1, changes: 1 } };
+      // Normal failed/successful login:
+      // role is hardcoded as 'admin'/'user'; success, reason and created_at
+      // are the bound arguments.
+      if (s.includes("values ('admin', 0, 'locked', ?)")) {
+        const createdAt = Number(args[0]);
+        this.loginAttempts.push({
+          id: this.nextAttemptId++,
+          role: "admin",
+          success: 0,
+          reason: "locked",
+          created_at: createdAt,
+        });
+      } else {
+        const [success, reason, createdAt] = args;
+        const roleMatch = s.match(/values \('([^']+)', \?, \?, \?\)/);
+        const role = roleMatch?.[1] ?? "unknown";
+
+        this.loginAttempts.push({
+          id: this.nextAttemptId++,
+          role,
+          success: success as number,
+          reason: (reason as string) ?? null,
+          created_at: createdAt as number,
+        });
+      }
+
+      return {
+        success: true,
+        meta: {
+          last_row_id: this.nextAttemptId - 1,
+          changes: 1,
+        },
+      };
     }
     if (s.includes("insert into sessions")) {
       const [token, role, createdAt, expiresAt] = args;
@@ -97,6 +121,9 @@ class FakeD1 {
     if (s.includes("update notifications set read_at")) {
       return { success: true, meta: { last_row_id: 0, changes: 1 } };
     }
+    if (s.includes("insert into notifications")) {
+      return { success: true, meta: { last_row_id: 1, changes: 1 } };
+    }
     throw new Error(`FakeD1: unhandled write SQL: ${sql}`);
   }
 
@@ -124,10 +151,25 @@ class FakeD1 {
     if (s.includes("select 1 as ok")) {
       return { ok: 1 } as T;
     }
+    if (s.includes("select id from notifications where")) {
+      return null;
+    }
     throw new Error(`FakeD1: unhandled read SQL: ${sql}`);
   }
 
-  doAll<T = unknown>(): { success: boolean; results: T[] } {
+  doAll<T = unknown>(sql: string, args: unknown[]): { success: boolean; results: T[] } {
+    const s = normalize(sql);
+    if (s.includes("select count(*) as c from login_attempts la")) {
+      const role = String(args[0]);
+      const cutoff = Number(args[1]);
+      const lastSuccessId = this.loginAttempts
+        .filter((a) => a.role === role && a.success === 1 && a.created_at >= cutoff)
+        .reduce((max, a) => Math.max(max, a.id), 0);
+      const c = this.loginAttempts.filter(
+        (a) => a.role === role && a.success === 0 && a.created_at >= cutoff && a.id > lastSuccessId
+      ).length;
+      return { success: true, results: [{ c } as T] };
+    }
     return { success: true, results: [] };
   }
 }
@@ -152,7 +194,7 @@ class FakeStatement {
   }
 
   all<T = unknown>() {
-    return this.db.doAll<T>();
+    return this.db.doAll<T>(this.sql, this.args);
   }
 }
 
@@ -348,6 +390,189 @@ test("AUTH: expired/revoked session returns 401", async () => {
   db.sessions.push({ token: expiredToken, role: "user", created_at: now - 3600, expires_at: now - 60 });
   const res = await request("/me/home", { headers: { origin: PROD_ORIGIN, cookie: `lj_session=${expiredToken}` } }, env);
   assert.equal(res.status, 401);
+});
+
+// ---------------------------------------------------------------------------
+// Admin login error handling
+// ---------------------------------------------------------------------------
+
+test("ADMIN LOGIN: missing credentials returns 400 with missing_credentials", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const res = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({}),
+  }, env);
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.code, "missing_credentials");
+});
+
+test("ADMIN LOGIN: missing email returns 400 with missing_credentials", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const res = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ password: "somepassword" }),
+  }, env);
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.code, "missing_credentials");
+});
+
+test("ADMIN LOGIN: missing password returns 400 with missing_credentials", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const res = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: "admin@example.com" }),
+  }, env);
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.code, "missing_credentials");
+});
+
+test("ADMIN LOGIN: invalid email format returns 400 with invalid_email", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const badEmails = ["notanemail", "missing@tld", "@nodomain.com"];
+  for (const badEmail of badEmails) {
+    const res = await request("/auth/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+      body: JSON.stringify({ email: badEmail, password: "somepassword" }),
+    }, env);
+    assert.equal(res.status, 400, `expected 400 for email: ${badEmail}`);
+    const body = await res.json();
+    assert.equal(body.code, "invalid_email", `expected invalid_email code for: ${badEmail}`);
+  }
+});
+
+test("ADMIN LOGIN: wrong email returns 401 with invalid_credentials", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const res = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: "wrong@example.com", password: ADMIN_PASSWORD }),
+  }, env);
+  assert.equal(res.status, 401);
+  const body = await res.json();
+  assert.equal(body.code, "invalid_credentials");
+});
+
+test("ADMIN LOGIN: wrong password returns 401 with invalid_credentials", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const res = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong-password" }),
+  }, env);
+  assert.equal(res.status, 401);
+  const body = await res.json();
+  assert.equal(body.code, "invalid_credentials");
+});
+
+test("ADMIN LOGIN: wrong email and wrong password produce identical responses", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  const wrongEmail = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: "wrong@example.com", password: "wrong-password" }),
+  }, env);
+  const wrongPassword = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong-password" }),
+  }, env);
+  assert.equal(wrongEmail.status, wrongPassword.status);
+  const body1 = await wrongEmail.json();
+  const body2 = await wrongPassword.json();
+  assert.equal(body1.error, body2.error);
+  assert.equal(body1.code, body2.code);
+});
+
+test("ADMIN LOGIN: 5th failure triggers rate limit with 429 (post-check)", async () => {
+  await ensureHashes();
+  const { db, env } = makeEnv(PROD);
+  for (let i = 0; i < 4; i++) {
+    const res = await request("/auth/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+      body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+    }, env);
+    assert.equal(res.status, 401, `attempt ${i + 1} should return 401`);
+    const body = await res.json();
+    assert.equal(body.code, "invalid_credentials");
+  }
+  const fifth = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+  }, env);
+  assert.equal(db.loginAttempts.length, 5, "expected 5 recorded attempts");
+  assert.equal(
+    db.loginAttempts.filter((a) => a.role === "admin" && a.success === 0).length,
+    5,
+    "expected 5 failed admin attempts"
+  );
+
+  assert.equal(fifth.status, 429, "5th attempt triggers rate limit via post-check");
+  const body = await fifth.json();
+  assert.equal(body.code, "rate_limited");
+});
+
+test("ADMIN LOGIN: attempt while locked remains 429", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  for (let i = 0; i < 4; i++) {
+    await request("/auth/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+      body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+    }, env);
+  }
+  const fifth = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+  }, env);
+  assert.equal(fifth.status, 429, "5th attempt triggers lockout");
+  const sixth = await request("/auth/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+  }, env);
+  assert.equal(sixth.status, 429);
+  const body = await sixth.json();
+  assert.equal(body.code, "rate_limited");
+});
+
+test("ADMIN LOGIN: successful login resets failure counter", async () => {
+  await ensureHashes();
+  const { env } = makeEnv(PROD);
+  for (let i = 0; i < 3; i++) {
+    await request("/auth/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+      body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+    }, env);
+  }
+  const loginRes = await adminLogin(env);
+  assert.equal(loginRes.status, 200);
+  for (let i = 0; i < 2; i++) {
+    const res = await request("/auth/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: PROD_ORIGIN },
+      body: JSON.stringify({ email: ADMIN_EMAIL, password: "wrong" }),
+    }, env);
+    assert.equal(res.status, 401, `attempt after reset ${i + 1} should return 401, not 429`);
+  }
 });
 
 // ---------------------------------------------------------------------------

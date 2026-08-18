@@ -18,3 +18,19 @@ export function userLoginErrorMessage(payload: LoginFailurePayload | null | unde
   }
   return payload.error ?? "Login failed";
 }
+
+export function adminLoginErrorMessage(payload: LoginFailurePayload | null | undefined): string {
+  if (!payload) return "Login failed";
+  switch (payload.code) {
+    case "rate_limited":
+      return "Too many login attempts. Please try again later.";
+    case "invalid_email":
+      return "Please enter a valid email address.";
+    case "missing_credentials":
+      return "Email and password are required.";
+    case "invalid_credentials":
+      return "Invalid email or password.";
+    default:
+      return payload.error ?? "Login failed";
+  }
+}

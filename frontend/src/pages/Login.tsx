@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
-import { userLoginErrorMessage } from "../lib/loginMessages";
+import { userLoginErrorMessage, adminLoginErrorMessage } from "../lib/loginMessages";
 import { sounds, haptic } from "../lib/feedback";
 
 export default function Login() {
@@ -88,8 +88,10 @@ export default function Login() {
       await refresh();
       navigate("/admin", { replace: true });
     } catch (err) {
+      haptic.error();
       sounds.error();
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      const payload = err instanceof ApiError ? err.payload : null;
+      setError(adminLoginErrorMessage(payload));
     } finally {
       setSubmitting(false);
     }
