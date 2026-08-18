@@ -8,6 +8,7 @@ import NavBar from "./components/NavBar";
 import UniversalControls from "./components/UniversalControls";
 import AdminNav from "./components/admin/AdminNav";
 import ChatPopupHost from "./components/ChatPopup";
+import AdminPWAInstallPrompt from "./components/admin/AdminPWAInstallPrompt";
 
 import Login from "./pages/Login";
 import Home from "./pages/Home";
@@ -60,6 +61,7 @@ function AdminLayout() {
         </div>
       </main>
       <ChatPopupHost />
+      <AdminPWAInstallPrompt />
     </div>
   );
 }

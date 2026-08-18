@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#1c1019" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      /* Swap manifest before the browser evaluates installability so the Admin
+         PWA install prompt uses the admin-specific manifest instead of the
+         default user manifest. Runs before React mounts. */
+      (function () {
+        if (window.location.pathname.startsWith("/admin")) {
+          var l = document.querySelector('link[rel="manifest"]');
+          if (l) l.setAttribute("href", "/admin-manifest.webmanifest");
+        }
+      })();
+    </script>
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/playfair-display.woff2" />
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/plus-jakarta-sans.woff2" />
     <title>LoveJar</title>
